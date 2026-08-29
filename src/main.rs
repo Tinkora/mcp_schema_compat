@@ -119,6 +119,7 @@ fn check(v: &Value, p: &Profile) -> Vec<Diagnostic> {
                 "$.parameters.additionalProperties",
             ));
         }
+        scan_keywords(x, p, "$.parameters", &mut d);
     }
     match p {
         Profile::Openai => {
@@ -148,6 +149,31 @@ fn check(v: &Value, p: &Profile) -> Vec<Diagnostic> {
         }
     }
     d
+}
+fn scan_keywords(v: &Value, p: &Profile, path: &str, d: &mut Vec<Diagnostic>) {
+    if let Some(obj) = v.as_object() {
+        for key in ["oneOf", "anyOf", "const", "nullable"] {
+            if obj.contains_key(key) {
+                let unsupported = matches!(p, Profile::Openapi3) || key == "const";
+                if unsupported {
+                    d.push(diag(
+                        "SCHEMA006",
+                        "error",
+                        "keyword is outside the selected provider compatibility subset",
+                        &format!("{path}.{key}"),
+                    ));
+                }
+            }
+        }
+        if let Some(props) = obj.get("properties").and_then(Value::as_object) {
+            for (name, child) in props {
+                scan_keywords(child, p, &format!("{path}.properties.{name}"), d);
+            }
+        }
+        if let Some(items) = obj.get("items") {
+            scan_keywords(items, p, &format!("{path}.items"), d);
+        }
+    }
 }
 fn diag(id: &str, level: &str, msg: &str, path: &str) -> Diagnostic {
     Diagnostic {
@@ -185,6 +211,15 @@ mod tests {
             check(&v, &Profile::Openapi3)
                 .iter()
                 .any(|d| d.rule_id == "OPENAPI001")
+        );
+    }
+    #[test]
+    fn rejects_nested_const_for_openai() {
+        let v = serde_json::json!({"name":"x","description":"x","parameters":{"type":"object","properties":{"mode":{"type":"string","const":"fast"}}}});
+        assert!(
+            check(&v, &Profile::Openai)
+                .iter()
+                .any(|d| d.rule_id == "SCHEMA006")
         );
     }
 }
