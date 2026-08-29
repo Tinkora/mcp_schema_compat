@@ -1,0 +1,9 @@
+# mcp-schema-compat
+
+本地、确定性的 Agent 工具 Schema 兼容性检查器，支持 OpenAI、Gemini 与 OpenAPI 3 profile，并可输出文本、JSON 或 SARIF。发现错误时返回非零退出码，不访问模型或网络。
+
+```bash
+cargo run -- tool.json --profile openai --output text
+```
+
+English: [README.md](README.md)
