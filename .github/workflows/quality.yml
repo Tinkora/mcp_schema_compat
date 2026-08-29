@@ -8,8 +8,9 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo fmt --all -- --check
-      - run: cargo test --locked
-      - run: cargo clippy --all-targets --locked -- -D warnings
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install Rust toolchain
+        run: rustup toolchain install 1.95.0 --profile minimal --no-self-update
+      - run: cargo +1.95.0 fmt --all -- --check
+      - run: cargo +1.95.0 test --locked
+      - run: cargo +1.95.0 clippy --all-targets --locked -- -D warnings
