@@ -9,3 +9,5 @@ cargo run -- tool.json --profile openai --output text
 Exit status is non-zero when an error diagnostic is found. No model or network access is used.
 
 中文说明见 [README.zh-CN.md](README.zh-CN.md)。
+
+If this saves you debugging time, support Tinkora on [Ko-fi](https://ko-fi.com/tinkora).

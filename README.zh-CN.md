@@ -7,3 +7,4 @@ cargo run -- tool.json --profile openai --output text
 ```
 
 English: [README.md](README.md)
+如果它帮助你节省了调试时间，欢迎在 [Ko-fi](https://ko-fi.com/tinkora) 支持 Tinkora。
