@@ -102,7 +102,7 @@ fn check(v: &Value, p: &Profile) -> Vec<Diagnostic> {
         ));
     }
     let params = obj.get("parameters").or_else(|| obj.get("inputSchema"));
-    if !params.is_some_and(|x| x.get("type").and_then(Value::as_str) == Some("object")) {
+    if params.is_none_or(|x| x.get("type").and_then(Value::as_str) != Some("object")) {
         d.push(diag(
             "SCHEMA004",
             "error",
