@@ -120,6 +120,14 @@ fn check(v: &Value, p: &Profile) -> Vec<Diagnostic> {
             ));
         }
         scan_keywords(x, p, "$.parameters", &mut d);
+        if matches!(p, Profile::Openai) && x.get("additionalProperties").is_none() {
+            d.push(diag(
+                "OPENAI002",
+                "warning",
+                "set additionalProperties=false for strict structured outputs",
+                "$.parameters.additionalProperties",
+            ));
+        }
     }
     match p {
         Profile::Openai => {
@@ -192,7 +200,7 @@ mod tests {
     use super::*;
     #[test]
     fn valid_openai() {
-        let v: Value = serde_json::json!({"name":"search","description":"Find items","parameters":{"type":"object","properties":{}}});
+        let v: Value = serde_json::json!({"name":"search","description":"Find items","parameters":{"type":"object","properties":{},"additionalProperties":false}});
         assert!(check(&v, &Profile::Openai).is_empty());
     }
     #[test]
@@ -220,6 +228,15 @@ mod tests {
             check(&v, &Profile::Openai)
                 .iter()
                 .any(|d| d.rule_id == "SCHEMA006")
+        );
+    }
+    #[test]
+    fn warns_when_openai_object_is_not_strict() {
+        let v = serde_json::json!({"name":"x","description":"x","parameters":{"type":"object","properties":{}}});
+        assert!(
+            check(&v, &Profile::Openai)
+                .iter()
+                .any(|d| d.rule_id == "OPENAI002")
         );
     }
 }
