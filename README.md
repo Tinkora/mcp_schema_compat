@@ -2,6 +2,8 @@
 
 Deterministic, local-first compatibility checks for agent tool schemas. Validate a JSON tool definition against OpenAI, Gemini, or OpenAPI 3 conventions and emit text, JSON, or SARIF diagnostics.
 
+Checks include provider envelope naming, strict OpenAI object constraints, and recursively nested keywords such as `oneOf`, `anyOf`, `const`, and `nullable`.
+
 ```bash
 cargo run -- tool.json --profile openai --output text
 ```

@@ -9,6 +9,7 @@ Agent tool schemas often pass local type checks but fail provider validation bec
 - Read one JSON tool definition.
 - Check common required fields and provider-specific envelope rules.
 - Emit stable rule IDs in text, JSON, or SARIF.
+- Recursively flag provider-incompatible schema keywords and non-strict OpenAI objects.
 - Never call a model or send input over the network.
 
 ## Non-goals
