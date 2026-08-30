@@ -133,3 +133,125 @@ fn escapes_untrusted_tool_names_in_text_output() {
         .stdout(predicates::str::contains(r#""bad\nERROR [FAKE]""#))
         .stdout(predicates::str::contains("bad\nERROR [FAKE]:").not());
 }
+
+#[test]
+fn reports_name_collisions_only_within_server_and_uses_explicit_fields() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("inventory.json");
+    fs::write(
+        &input,
+        r#"{
+      "tools": [
+        {"origin_id":"a","server_id":"s1","tool_name":"search","server_tool":"search"},
+        {"origin_id":"b","server_id":"s1","tool_name":"search","server_tool":"search"},
+        {"origin_id":"c","server_id":"s2","tool_name":"search","server_tool":"search"}
+      ]
+    }"#,
+    )
+    .unwrap();
+    let output = Command::cargo_bin("mcp-schema-compat")
+        .unwrap()
+        .args([
+            input.to_str().unwrap(),
+            "--name-collisions",
+            "--output",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let ids: Vec<_> = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["rule_id"].as_str().unwrap())
+        .collect();
+    assert!(ids.contains(&"NAME001_DUPLICATE_RAW_TOOL_NAME"));
+    assert!(ids.contains(&"NAME002_DUPLICATE_SERVER_TOOL"));
+    assert_eq!(
+        ids.iter()
+            .filter(|id| **id == "NAME001_DUPLICATE_RAW_TOOL_NAME")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn applies_explicit_normalization_and_ascii_byte_limit_without_mutating_names() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("inventory.json");
+    fs::write(&input, r#"[{"origin_id":"a","server_id":"s","tool_name":"Read File","server_tool":"read-file"},{"origin_id":"b","server_id":"s","tool_name":"read_file","server_tool":"read_file"}]"#).unwrap();
+    let output = Command::cargo_bin("mcp-schema-compat")
+        .unwrap()
+        .args([
+            input.to_str().unwrap(),
+            "--name-collisions",
+            "--normalize",
+            "ascii_lower_sep",
+            "--max-server-tool-bytes",
+            "8",
+            "--output",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let ids: Vec<_> = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["rule_id"].as_str().unwrap())
+        .collect();
+    assert!(ids.contains(&"NAME003_NORMALIZED_SERVER_TOOL_COLLISION"));
+    assert!(ids.contains(&"NAME004_SERVER_TOOL_OVER_LIMIT"));
+    assert_eq!(report["entries"][0]["server_tool"], "read-file");
+}
+
+#[test]
+fn rejects_missing_explicit_identity_fields() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("inventory.json");
+    fs::write(&input, r#"[{"server_tool":"x"}]"#).unwrap();
+    Command::cargo_bin("mcp-schema-compat")
+        .unwrap()
+        .args([input.to_str().unwrap(), "--name-collisions"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("InvalidEntry(0)"));
+}
+
+#[test]
+fn rejects_empty_identity_fields_and_does_not_apply_ascii_limit_to_unicode() {
+    let dir = tempdir().unwrap();
+    let invalid = dir.path().join("invalid.json");
+    fs::write(
+        &invalid,
+        r#"[{"origin_id":"","server_id":"s","tool_name":"x","server_tool":"x"}]"#,
+    )
+    .unwrap();
+    Command::cargo_bin("mcp-schema-compat")
+        .unwrap()
+        .args([invalid.to_str().unwrap(), "--name-collisions"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("InvalidEntry(0)"));
+
+    let unicode = dir.path().join("unicode.json");
+    fs::write(
+        &unicode,
+        r#"[{"origin_id":"a","server_id":"s","tool_name":"工具","server_tool":"工具"}]"#,
+    )
+    .unwrap();
+    Command::cargo_bin("mcp-schema-compat")
+        .unwrap()
+        .args([
+            unicode.to_str().unwrap(),
+            "--name-collisions",
+            "--max-server-tool-bytes",
+            "1",
+        ])
+        .assert()
+        .success();
+}
