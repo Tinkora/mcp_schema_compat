@@ -92,10 +92,7 @@ pub fn analyze_name_collisions(
             diagnostics.push(NameCollisionDiagnostic {
                 rule_id: "NAME001_DUPLICATE_RAW_TOOL_NAME",
                 level: "error",
-                message: format!(
-                    "raw tool name is duplicated within server_id {}",
-                    entry.server_id
-                ),
+                message: "raw tool name is duplicated within this server_id".into(),
                 path: path(i),
             });
         }
@@ -103,7 +100,7 @@ pub fn analyze_name_collisions(
             diagnostics.push(NameCollisionDiagnostic {
                 rule_id: "NAME002_DUPLICATE_SERVER_TOOL",
                 level: "error",
-                message: format!("server_tool is duplicated: {}", entry.server_tool),
+                message: "server_tool is duplicated".into(),
                 path: path(i),
             });
         }
@@ -113,7 +110,7 @@ pub fn analyze_name_collisions(
                 diagnostics.push(NameCollisionDiagnostic {
                     rule_id: "NAME003_NORMALIZED_SERVER_TOOL_COLLISION",
                     level: "error",
-                    message: format!("normalized server_tool collides: {normalized}"),
+                    message: "normalized server_tool collides".into(),
                     path: path(i),
                 });
             }

@@ -255,3 +255,20 @@ fn rejects_empty_identity_fields_and_does_not_apply_ascii_limit_to_unicode() {
         .assert()
         .success();
 }
+
+#[test]
+fn does_not_echo_untrusted_names_into_text_diagnostics() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("inventory.json");
+    fs::write(
+        &input,
+        r#"[{"origin_id":"a","server_id":"s","tool_name":"x","server_tool":"bad\nERROR [FAKE]"},{"origin_id":"b","server_id":"s","tool_name":"y","server_tool":"bad\nERROR [FAKE]"}]"#,
+    )
+    .unwrap();
+    Command::cargo_bin("mcp-schema-compat")
+        .unwrap()
+        .args([input.to_str().unwrap(), "--name-collisions"])
+        .assert()
+        .failure()
+        .stdout(predicates::str::contains("ERROR [FAKE]").not());
+}
