@@ -125,7 +125,7 @@ fn print_context_budget(report: &ContextBudgetReport, output: &Output) -> Result
             for tool in &report.tools {
                 println!(
                     "{}: {} UTF-8 bytes, <= {} estimated tokens (description {}, schema {})",
-                    tool.name,
+                    serde_json::to_string(&tool.name).expect("string serialization cannot fail"),
                     tool.utf8_bytes,
                     tool.estimated_tokens,
                     tool.description_bytes,

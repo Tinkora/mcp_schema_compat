@@ -1,4 +1,5 @@
 use assert_cmd::Command;
+use predicates::prelude::PredicateBooleanExt;
 use serde_json::Value;
 use std::fs;
 use tempfile::tempdir;
@@ -98,4 +99,37 @@ fn preserves_single_tool_input_without_requiring_a_profile() {
             "Estimator: utf8_bytes_upper_bound_v1",
         ))
         .stdout(predicates::str::contains("search"));
+}
+
+#[test]
+fn rejects_an_arbitrary_object_instead_of_reporting_a_false_success() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("not-a-tool.json");
+    fs::write(&input, r#"{"foo":1}"#).unwrap();
+
+    Command::cargo_bin("mcp-schema-compat")
+        .unwrap()
+        .args([input.to_str().unwrap(), "--context-budget"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("InvalidInput"));
+}
+
+#[test]
+fn escapes_untrusted_tool_names_in_text_output() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("tool.json");
+    fs::write(
+        &input,
+        r#"{"name":"bad\nERROR [FAKE]","inputSchema":{"type":"object"}}"#,
+    )
+    .unwrap();
+
+    Command::cargo_bin("mcp-schema-compat")
+        .unwrap()
+        .args([input.to_str().unwrap(), "--context-budget"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(r#""bad\nERROR [FAKE]""#))
+        .stdout(predicates::str::contains("bad\nERROR [FAKE]:").not());
 }

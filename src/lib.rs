@@ -185,7 +185,13 @@ fn extract_tools(input: &Value) -> Result<Vec<(&Value, String)>, ContextBudgetEr
             .collect());
     }
 
-    Ok(vec![(input, "$".to_owned())])
+    let has_name = object.get("name").and_then(Value::as_str).is_some();
+    let has_schema = object.get("inputSchema").is_some() || object.get("parameters").is_some();
+    if has_name && has_schema {
+        Ok(vec![(input, "$".to_owned())])
+    } else {
+        Err(ContextBudgetError::InvalidInput)
+    }
 }
 
 fn push_if_exceeded(
