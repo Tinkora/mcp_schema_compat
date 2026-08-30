@@ -272,3 +272,26 @@ fn does_not_echo_untrusted_names_into_text_diagnostics() {
         .failure()
         .stdout(predicates::str::contains("ERROR [FAKE]").not());
 }
+
+#[test]
+fn reports_the_correct_error_when_sarif_is_requested_for_name_collisions() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("inventory.json");
+    fs::write(
+        &input,
+        r#"[{"origin_id":"a","server_id":"s","tool_name":"x","server_tool":"x"}]"#,
+    )
+    .unwrap();
+
+    Command::cargo_bin("mcp-schema-compat")
+        .unwrap()
+        .args([
+            input.to_str().unwrap(),
+            "--name-collisions",
+            "--output",
+            "sarif",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("NameCollisionSarif"));
+}

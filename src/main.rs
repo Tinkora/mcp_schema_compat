@@ -69,6 +69,8 @@ enum Error {
     ContextBudgetSarif,
     #[error("name collision analysis: {0}")]
     NameCollisions(#[from] mcp_schema_compat::NameCollisionError),
+    #[error("SARIF output is not available for name collision reports; use text or JSON")]
+    NameCollisionSarif,
 }
 #[derive(serde::Serialize)]
 struct Diagnostic {
@@ -102,7 +104,7 @@ fn main() -> Result<(), Error> {
     }
     if cli.name_collisions {
         if matches!(cli.output, Output::Sarif) {
-            return Err(Error::ContextBudgetSarif);
+            return Err(Error::NameCollisionSarif);
         }
         let normalization = match cli.normalize.as_str() {
             "none" => NameNormalization::None,
