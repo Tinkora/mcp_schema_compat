@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.0-alpha.9] - 2026-08-31
 
 - Add deterministic MCP tool annotation completeness and structural consistency
   checks with text, JSON, and SARIF output.
