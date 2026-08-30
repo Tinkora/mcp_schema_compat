@@ -1,6 +1,168 @@
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::HashMap;
 use thiserror::Error;
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct NameInventoryEntry {
+    pub origin_id: String,
+    pub server_id: String,
+    pub tool_name: String,
+    pub server_tool: String,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub enum NameNormalization {
+    #[default]
+    None,
+    AsciiLowerSep,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct NameCollisionPolicy {
+    pub normalization: NameNormalization,
+    pub max_server_tool_bytes: Option<usize>,
+}
+
+#[derive(Debug, Error)]
+pub enum NameCollisionError {
+    #[error("name collision inventory must be an array or an object containing a tools array")]
+    InvalidInventory,
+    #[error(
+        "inventory entry {0} must contain string origin_id, server_id, tool_name, and server_tool"
+    )]
+    InvalidEntry(usize),
+    #[error("unsupported normalization policy: {0}")]
+    UnsupportedNormalization(String),
+    #[error("failed to parse inventory: {0}")]
+    Parse(#[from] serde_json::Error),
+}
+
+#[derive(Debug, Serialize)]
+pub struct NameCollisionDiagnostic {
+    pub rule_id: &'static str,
+    pub level: &'static str,
+    pub message: String,
+    pub path: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NameCollisionReport {
+    pub normalization: &'static str,
+    pub length_unit: &'static str,
+    pub entries: Vec<NameInventoryEntry>,
+    pub diagnostics: Vec<NameCollisionDiagnostic>,
+}
+
+pub fn analyze_name_collisions(
+    input: &Value,
+    policy: NameCollisionPolicy,
+) -> Result<NameCollisionReport, NameCollisionError> {
+    let (raw, root) = if let Some(entries) = input.as_array() {
+        (entries, "$")
+    } else if let Some(entries) = input.get("tools").and_then(Value::as_array) {
+        (entries, "$.tools")
+    } else {
+        return Err(NameCollisionError::InvalidInventory);
+    };
+    let mut entries = Vec::with_capacity(raw.len());
+    for (i, value) in raw.iter().enumerate() {
+        let entry: NameInventoryEntry = serde_json::from_value(value.clone())
+            .map_err(|_| NameCollisionError::InvalidEntry(i))?;
+        if entry.origin_id.is_empty()
+            || entry.server_id.is_empty()
+            || entry.tool_name.is_empty()
+            || entry.server_tool.is_empty()
+        {
+            return Err(NameCollisionError::InvalidEntry(i));
+        }
+        entries.push(entry);
+    }
+    let mut diagnostics = Vec::new();
+    let path = |i: usize| format!("{root}[{i}]");
+    let mut raw_names = HashMap::new();
+    let mut final_names = HashMap::new();
+    let mut normalized_names = HashMap::new();
+    for i in 0..entries.len() {
+        let entry = &entries[i];
+        if raw_names
+            .insert((entry.server_id.as_str(), entry.tool_name.as_str()), i)
+            .is_some()
+        {
+            diagnostics.push(NameCollisionDiagnostic {
+                rule_id: "NAME001_DUPLICATE_RAW_TOOL_NAME",
+                level: "error",
+                message: "raw tool name is duplicated within this server_id".into(),
+                path: path(i),
+            });
+        }
+        if final_names.insert(entry.server_tool.as_str(), i).is_some() {
+            diagnostics.push(NameCollisionDiagnostic {
+                rule_id: "NAME002_DUPLICATE_SERVER_TOOL",
+                level: "error",
+                message: "server_tool is duplicated".into(),
+                path: path(i),
+            });
+        }
+        let normalized = normalize(&entry.server_tool, policy.normalization);
+        if let Some(previous) = normalized_names.insert(normalized.clone(), i) {
+            if entries[previous].server_tool != entry.server_tool {
+                diagnostics.push(NameCollisionDiagnostic {
+                    rule_id: "NAME003_NORMALIZED_SERVER_TOOL_COLLISION",
+                    level: "error",
+                    message: "normalized server_tool collides".into(),
+                    path: path(i),
+                });
+            }
+        }
+        if let Some(limit) = policy.max_server_tool_bytes {
+            if entries[i].server_tool.is_ascii() && entries[i].server_tool.len() > limit {
+                diagnostics.push(NameCollisionDiagnostic {
+                    rule_id: "NAME004_SERVER_TOOL_OVER_LIMIT",
+                    level: "error",
+                    message: format!(
+                        "server_tool uses {} ASCII bytes, exceeding {limit}-byte limit",
+                        entries[i].server_tool.len()
+                    ),
+                    path: path(i),
+                });
+            }
+        }
+        if entries[i].tool_name.trim() != entries[i].tool_name {
+            diagnostics.push(NameCollisionDiagnostic {
+                rule_id: "NAME005_RAW_TOOL_NAME_ADVISORY",
+                level: "warning",
+                message: "raw tool name has leading or trailing whitespace".into(),
+                path: format!("{}.tool_name", path(i)),
+            });
+        }
+    }
+    Ok(NameCollisionReport {
+        normalization: match policy.normalization {
+            NameNormalization::None => "none",
+            NameNormalization::AsciiLowerSep => "ascii_lower_sep",
+        },
+        length_unit: "ASCII bytes (non-ASCII names are not measured)",
+        entries,
+        diagnostics,
+    })
+}
+
+fn normalize(value: &str, policy: NameNormalization) -> String {
+    match policy {
+        NameNormalization::None => value.to_owned(),
+        NameNormalization::AsciiLowerSep => value
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() {
+                    c.to_ascii_lowercase()
+                } else {
+                    '-'
+                }
+            })
+            .collect(),
+    }
+}
 
 pub const TOKEN_ESTIMATOR: &str = "utf8_bytes_upper_bound_v1";
 pub const TOKEN_ESTIMATOR_NOTE: &str =

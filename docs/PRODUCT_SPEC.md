@@ -28,6 +28,10 @@ estimator, runtime profiler, or replacement for provider SDKs. Context budget
 analysis does not execute tools or prove that a payload fits a provider-specific
 context window.
 
+Name collision analysis does not automatically rename, truncate, hash, or pick
+a winner, and does not treat equal raw names from different servers as an MCP
+protocol error.
+
 ## Context budget contract
 
 - Estimator: `utf8_bytes_upper_bound_v1`.
@@ -38,3 +42,14 @@ context window.
 - Rule IDs: `CONTEXT_TOOL_BUDGET`, `CONTEXT_TOTAL_BUDGET`,
   `CONTEXT_DESCRIPTION_LENGTH`, and `CONTEXT_SCHEMA_LENGTH`.
 - Exit status: 1 when any configured context limit is exceeded; 0 otherwise.
+
+## Aggregated name inventory contract
+
+- Inputs: records with explicit `origin_id`, `server_id`, `tool_name`, and final
+  `server_tool` fields.
+- Rules: `NAME001_DUPLICATE_RAW_TOOL_NAME` (same server only),
+  `NAME002_DUPLICATE_SERVER_TOOL`, `NAME003_NORMALIZED_SERVER_TOOL_COLLISION`,
+  `NAME004_SERVER_TOOL_OVER_LIMIT`, and `NAME005_RAW_TOOL_NAME_ADVISORY`.
+- Policies: normalization and length limits are opt-in; the initial length
+  policy measures ASCII names in bytes and leaves non-ASCII names unmeasured.
+- Behavior: deterministic, read-only, offline, and never mutates inventory.

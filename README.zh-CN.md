@@ -29,5 +29,23 @@ cargo run -- tools.json --context-budget --output json
 `--max-description-bytes` 和 `--max-schema-bytes` 调整。超过阈值时输出稳定
 规则 ID，并返回退出码 1。
 
+## MCP 聚合名称冲突报告
+
+当宿主聚合多个 MCP 服务器时，可检查调用方提供的最终名称：
+
+```bash
+cargo run -- inventory.json --name-collisions --output json
+```
+
+输入是数组或包含 `tools` 数组的对象；每项必须明确提供 `origin_id`、
+`server_id`、原始 `tool_name` 和最终 `server_tool`。这是显式部署策略检查，
+并不声称 MCP 原始名称必须全局唯一。工具不会重命名、截断、散列名称或选择
+胜者。稳定的 `NAME001` 到 `NAME005` 规则覆盖同服务器原始名称重复、最终名称
+重复、显式规范化冲突、显式长度限制及原始名称可疑空白。
+
+默认不规范化。`--normalize ascii_lower_sep` 只小写 ASCII 字母，并把每个非
+字母数字字符映射为 `-`。`--max-server-tool-bytes N` 以字节衡量 ASCII 最终
+名称；首版策略刻意不衡量非 ASCII 名称，避免暗中假设 Unicode 长度单位。
+
 English: [README.md](README.md)
 如果它帮助你节省了调试时间，欢迎在 [Ko-fi](https://ko-fi.com/tinkora) 支持 Tinkora。

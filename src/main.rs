@@ -1,5 +1,8 @@
 use clap::{Parser, ValueEnum};
-use mcp_schema_compat::{BudgetLimits, ContextBudgetReport, analyze_context_budget};
+use mcp_schema_compat::{
+    BudgetLimits, ContextBudgetReport, NameCollisionPolicy, NameNormalization,
+    analyze_context_budget, analyze_name_collisions,
+};
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf};
 use thiserror::Error;
@@ -14,11 +17,18 @@ struct Cli {
     /// JSON tool definition, tool array, or tools/list result.
     input: PathBuf,
     /// Provider compatibility profile.
-    #[arg(short, long, value_enum, required_unless_present = "context_budget")]
+    #[arg(short, long, value_enum, required_unless_present_any = ["context_budget", "name_collisions"])]
     profile: Option<Profile>,
     /// Report static context size without running any tools.
     #[arg(long, conflicts_with = "profile")]
     context_budget: bool,
+    /// Check an explicitly supplied multi-server tool inventory for name collisions.
+    #[arg(long, conflicts_with = "profile", conflicts_with = "context_budget")]
+    name_collisions: bool,
+    #[arg(long, requires = "name_collisions", default_value = "none")]
+    normalize: String,
+    #[arg(long, requires = "name_collisions")]
+    max_server_tool_bytes: Option<usize>,
     /// Maximum compact JSON bytes allowed for one tool.
     #[arg(long, requires = "context_budget", default_value_t = 32 * 1024)]
     max_tool_bytes: usize,
@@ -57,6 +67,10 @@ enum Error {
     ContextBudget(#[from] mcp_schema_compat::ContextBudgetError),
     #[error("SARIF output is not available for context budget reports; use text or JSON")]
     ContextBudgetSarif,
+    #[error("name collision analysis: {0}")]
+    NameCollisions(#[from] mcp_schema_compat::NameCollisionError),
+    #[error("SARIF output is not available for name collision reports; use text or JSON")]
+    NameCollisionSarif,
 }
 #[derive(serde::Serialize)]
 struct Diagnostic {
@@ -84,6 +98,51 @@ fn main() -> Result<(), Error> {
         )?;
         print_context_budget(&report, &cli.output)?;
         if report.has_errors() {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+    if cli.name_collisions {
+        if matches!(cli.output, Output::Sarif) {
+            return Err(Error::NameCollisionSarif);
+        }
+        let normalization = match cli.normalize.as_str() {
+            "none" => NameNormalization::None,
+            "ascii_lower_sep" => NameNormalization::AsciiLowerSep,
+            other => {
+                return Err(Error::NameCollisions(
+                    mcp_schema_compat::NameCollisionError::UnsupportedNormalization(
+                        other.to_owned(),
+                    ),
+                ));
+            }
+        };
+        let report = analyze_name_collisions(
+            &value,
+            NameCollisionPolicy {
+                normalization,
+                max_server_tool_bytes: cli.max_server_tool_bytes,
+            },
+        )?;
+        match cli.output {
+            Output::Text => {
+                for d in &report.diagnostics {
+                    println!(
+                        "{} [{}] {}: {}",
+                        d.level.to_uppercase(),
+                        d.rule_id,
+                        d.path,
+                        d.message
+                    );
+                }
+                if report.diagnostics.is_empty() {
+                    println!("No name collisions");
+                }
+            }
+            Output::Json => println!("{}", serde_json::to_string_pretty(&report)?),
+            Output::Sarif => unreachable!(),
+        }
+        if report.diagnostics.iter().any(|d| d.level == "error") {
             std::process::exit(1);
         }
         return Ok(());
