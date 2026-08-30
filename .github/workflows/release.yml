@@ -273,6 +273,7 @@ jobs:
       - name: Reverify and publish immutable assets
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           PRERELEASE: ${{ needs.validate.outputs.prerelease }}
         run: |
           set -euo pipefail
