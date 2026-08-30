@@ -1,4 +1,5 @@
 use clap::{Parser, ValueEnum};
+use mcp_schema_compat::{BudgetLimits, ContextBudgetReport, analyze_context_budget};
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf};
 use thiserror::Error;
@@ -10,9 +11,27 @@ use thiserror::Error;
     about = "Check agent tool schemas against provider profiles"
 )]
 struct Cli {
+    /// JSON tool definition, tool array, or tools/list result.
     input: PathBuf,
-    #[arg(short, long, value_enum)]
-    profile: Profile,
+    /// Provider compatibility profile.
+    #[arg(short, long, value_enum, required_unless_present = "context_budget")]
+    profile: Option<Profile>,
+    /// Report static context size without running any tools.
+    #[arg(long, conflicts_with = "profile")]
+    context_budget: bool,
+    /// Maximum compact JSON bytes allowed for one tool.
+    #[arg(long, requires = "context_budget", default_value_t = 32 * 1024)]
+    max_tool_bytes: usize,
+    /// Maximum combined compact JSON bytes allowed for all tools.
+    #[arg(long, requires = "context_budget", default_value_t = 256 * 1024)]
+    max_total_bytes: usize,
+    /// Maximum UTF-8 bytes allowed for one description.
+    #[arg(long, requires = "context_budget", default_value_t = 8 * 1024)]
+    max_description_bytes: usize,
+    /// Maximum compact JSON bytes allowed for one input schema.
+    #[arg(long, requires = "context_budget", default_value_t = 24 * 1024)]
+    max_schema_bytes: usize,
+    /// Report format. Context budgets support text and JSON.
     #[arg(short, long, value_enum, default_value_t = Output::Text)]
     output: Output,
 }
@@ -34,6 +53,10 @@ enum Error {
     Read(#[from] std::io::Error),
     #[error("invalid JSON: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("context budget analysis: {0}")]
+    ContextBudget(#[from] mcp_schema_compat::ContextBudgetError),
+    #[error("SARIF output is not available for context budget reports; use text or JSON")]
+    ContextBudgetSarif,
 }
 #[derive(serde::Serialize)]
 struct Diagnostic {
@@ -46,7 +69,30 @@ struct Diagnostic {
 fn main() -> Result<(), Error> {
     let cli = Cli::parse();
     let value: Value = serde_json::from_str(&fs::read_to_string(cli.input)?)?;
-    let ds = check(&value, &cli.profile);
+    if cli.context_budget {
+        if matches!(cli.output, Output::Sarif) {
+            return Err(Error::ContextBudgetSarif);
+        }
+        let report = analyze_context_budget(
+            &value,
+            BudgetLimits {
+                max_tool_bytes: cli.max_tool_bytes,
+                max_total_bytes: cli.max_total_bytes,
+                max_description_bytes: cli.max_description_bytes,
+                max_schema_bytes: cli.max_schema_bytes,
+            },
+        )?;
+        print_context_budget(&report, &cli.output)?;
+        if report.has_errors() {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
+    let ds = check(
+        &value,
+        cli.profile.as_ref().expect("profile is required by clap"),
+    );
     match cli.output {
         Output::Text => {
             for d in &ds {
@@ -67,6 +113,50 @@ fn main() -> Result<(), Error> {
     }
     if ds.iter().any(|d| d.level == "error") {
         std::process::exit(1);
+    }
+    Ok(())
+}
+
+fn print_context_budget(report: &ContextBudgetReport, output: &Output) -> Result<(), Error> {
+    match output {
+        Output::Text => {
+            println!("Estimator: {}", report.estimator);
+            println!("Note: {}", report.estimator_note);
+            for tool in &report.tools {
+                println!(
+                    "{}: {} UTF-8 bytes, <= {} estimated tokens (description {}, schema {})",
+                    tool.name,
+                    tool.utf8_bytes,
+                    tool.estimated_tokens,
+                    tool.description_bytes,
+                    tool.schema_bytes
+                );
+                for diagnostic in &tool.diagnostics {
+                    println!(
+                        "{} [{}] {}: {}",
+                        diagnostic.level.to_uppercase(),
+                        diagnostic.rule_id,
+                        diagnostic.path,
+                        diagnostic.message
+                    );
+                }
+            }
+            println!(
+                "Total: {} UTF-8 bytes, <= {} estimated tokens",
+                report.total_utf8_bytes, report.total_estimated_tokens
+            );
+            for diagnostic in &report.diagnostics {
+                println!(
+                    "{} [{}] {}: {}",
+                    diagnostic.level.to_uppercase(),
+                    diagnostic.rule_id,
+                    diagnostic.path,
+                    diagnostic.message
+                );
+            }
+        }
+        Output::Json => println!("{}", serde_json::to_string_pretty(report)?),
+        Output::Sarif => return Err(Error::ContextBudgetSarif),
     }
     Ok(())
 }
