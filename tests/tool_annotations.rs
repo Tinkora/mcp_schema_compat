@@ -103,3 +103,79 @@ fn rejects_non_tool_input_instead_of_reporting_success() {
         .failure()
         .stderr(predicates::str::contains("ToolAnnotations(InvalidInput)"));
 }
+
+#[test]
+fn rejects_collection_item_without_a_name() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("tools.json");
+    fs::write(
+        &input,
+        r#"{"tools":[{"inputSchema":{},"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}}]}"#,
+    )
+    .unwrap();
+
+    Command::cargo_bin("mcp-schema-compat")
+        .unwrap()
+        .args([input.to_str().unwrap(), "--tool-annotations"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("InvalidTool(0)"));
+}
+
+#[test]
+fn rejects_empty_or_non_string_collection_names() {
+    let dir = tempdir().unwrap();
+    for (filename, name) in [("empty.json", "\"\""), ("number.json", "1")] {
+        let input = dir.path().join(filename);
+        fs::write(
+            &input,
+            format!(
+                r#"[{{"name":{name},"inputSchema":{{}},"annotations":{{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}}}}]"#
+            ),
+        )
+        .unwrap();
+
+        Command::cargo_bin("mcp-schema-compat")
+            .unwrap()
+            .args([input.to_str().unwrap(), "--tool-annotations"])
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains("InvalidTool(0)"));
+    }
+}
+
+#[test]
+fn rejects_collection_item_without_input_schema() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("tools.json");
+    fs::write(
+        &input,
+        r#"[{"name":"search","annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}}]"#,
+    )
+    .unwrap();
+
+    Command::cargo_bin("mcp-schema-compat")
+        .unwrap()
+        .args([input.to_str().unwrap(), "--tool-annotations"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("InvalidTool(0)"));
+}
+
+#[test]
+fn rejects_non_object_input_schema_in_a_collection() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("tools.json");
+    fs::write(
+        &input,
+        r#"{"tools":[{"name":"search","inputSchema":true,"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}}]}"#,
+    )
+    .unwrap();
+
+    Command::cargo_bin("mcp-schema-compat")
+        .unwrap()
+        .args([input.to_str().unwrap(), "--tool-annotations"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("InvalidTool(0)"));
+}

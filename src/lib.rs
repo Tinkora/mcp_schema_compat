@@ -11,6 +11,8 @@ pub enum AnnotationError {
     InvalidInput,
     #[error("tools/list result must contain an array of tool objects")]
     InvalidToolsList,
+    #[error("tool {0} must contain a non-empty string name and an object inputSchema")]
+    InvalidTool(usize),
 }
 
 #[derive(Debug, Serialize)]
@@ -108,7 +110,7 @@ pub fn analyze_tool_annotations(input: &Value) -> Result<AnnotationReport, Annot
             diagnostics.push(AnnotationDiagnostic {
                 rule_id: "ANNOTATION004_READ_ONLY_DESTRUCTIVE",
                 level: "error",
-                message: "a read-only tool cannot also be marked destructive".to_owned(),
+                message: "explicit_safety_hints_v1 normalizes destructiveHint to false when readOnlyHint is true".to_owned(),
                 path: format!("{path}.annotations"),
             });
         }
@@ -124,8 +126,8 @@ pub fn analyze_tool_annotations(input: &Value) -> Result<AnnotationReport, Annot
 
 fn extract_annotation_tools(input: &Value) -> Result<Vec<(&Value, String)>, AnnotationError> {
     if let Some(items) = input.as_array() {
-        if items.iter().any(|item| !item.is_object()) {
-            return Err(AnnotationError::InvalidInput);
+        for (index, item) in items.iter().enumerate() {
+            validate_annotation_tool(item).map_err(|()| AnnotationError::InvalidTool(index))?;
         }
         return Ok(items
             .iter()
@@ -137,8 +139,8 @@ fn extract_annotation_tools(input: &Value) -> Result<Vec<(&Value, String)>, Anno
     let object = input.as_object().ok_or(AnnotationError::InvalidInput)?;
     if let Some(tools) = object.get("tools") {
         let items = tools.as_array().ok_or(AnnotationError::InvalidToolsList)?;
-        if items.iter().any(|item| !item.is_object()) {
-            return Err(AnnotationError::InvalidToolsList);
+        for (index, item) in items.iter().enumerate() {
+            validate_annotation_tool(item).map_err(|()| AnnotationError::InvalidTool(index))?;
         }
         return Ok(items
             .iter()
@@ -147,12 +149,24 @@ fn extract_annotation_tools(input: &Value) -> Result<Vec<(&Value, String)>, Anno
             .collect());
     }
 
-    let has_name = object.get("name").and_then(Value::as_str).is_some();
-    let has_schema = object.get("inputSchema").is_some() || object.get("parameters").is_some();
-    if has_name && has_schema {
-        Ok(vec![(input, "$".to_owned())])
+    if object.contains_key("name") || object.contains_key("inputSchema") {
+        validate_annotation_tool(input).map_err(|()| AnnotationError::InvalidTool(0))?;
+        return Ok(vec![(input, "$".to_owned())]);
+    }
+    Err(AnnotationError::InvalidInput)
+}
+
+fn validate_annotation_tool(tool: &Value) -> Result<(), ()> {
+    let object = tool.as_object().ok_or(())?;
+    let valid_name = object
+        .get("name")
+        .and_then(Value::as_str)
+        .is_some_and(|name| !name.is_empty());
+    let valid_schema = object.get("inputSchema").is_some_and(Value::is_object);
+    if valid_name && valid_schema {
+        Ok(())
     } else {
-        Err(AnnotationError::InvalidInput)
+        Err(())
     }
 }
 

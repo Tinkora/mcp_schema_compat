@@ -39,12 +39,16 @@ cargo run -- tools.json --tool-annotations --output sarif
 
 选择启用的 `explicit_safety_hints_v1` 策略要求 `readOnlyHint`、
 `destructiveHint` 和 `openWorldHint` 显式声明为 boolean，同时检查可选
-`idempotentHint` 与 `title` 的类型，并拒绝工具同时标记为只读与破坏性的确定性
-矛盾。稳定的 `ANNOTATION001` 到 `ANNOTATION004` 诊断支持文本、JSON 和
-SARIF。这是部署就绪策略，并不声称 MCP 协议要求声明所有可选 annotation。
+`idempotentHint` 与 `title` 的类型，并把 `readOnlyHint=true,
+destructiveHint=true` 作为自定义策略 normalization 报告：该策略要求只读工具的
+`destructiveHint=false`。稳定的 `ANNOTATION001` 到 `ANNOTATION004` 诊断支持
+文本、JSON 和 SARIF。这是部署就绪策略，并不声称 MCP 协议要求声明所有可选
+annotation，也不把该组合称为协议无效。
 
 该模式只做结构检查，不推断工具行为，也不能证明声明与实际实现相符；每个值仍需
 根据实现人工审阅。
+每个输入项必须包含非空 string `name` 与 object `inputSchema`；非法 collection
+项会令分析失败，而不是被静默跳过。
 
 ## MCP 聚合名称冲突报告
 

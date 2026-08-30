@@ -46,13 +46,17 @@ cargo run -- tools.json --tool-annotations --output sarif
 The opt-in `explicit_safety_hints_v1` policy requires `readOnlyHint`,
 `destructiveHint`, and `openWorldHint` to be declared as booleans. It also
 checks the optional `idempotentHint` and `title` types, and rejects the
-deterministic contradiction where a tool is both read-only and destructive.
+combination `readOnlyHint=true, destructiveHint=true` as a custom policy
+normalization: this policy expects `destructiveHint=false` for read-only tools.
 Stable `ANNOTATION001` through `ANNOTATION004` diagnostics are available in
 text, JSON, and SARIF. This is a deployment-readiness policy, not a claim that
 the MCP protocol requires every optional annotation.
 
 This structural check does not infer a tool's behavior or prove that declared
 annotations are truthful. Review each value against the implementation.
+Every input item must have a non-empty string `name` and an object
+`inputSchema`; malformed collection entries fail the analysis instead of being
+silently skipped.
 
 ## Aggregated MCP name collision report
 

@@ -23,8 +23,8 @@ is published.
 - Never call a model or send input over the network.
 - Under the opt-in `explicit_safety_hints_v1` policy, require explicit boolean
   `readOnlyHint`, `destructiveHint`, and `openWorldHint` annotations, validate
-  optional annotation field types, and reject the read-only/destructive
-  contradiction.
+  optional annotation field types, and normalize the read-only/destructive
+  combination under this custom policy.
 
 ## Non-goals
 
@@ -48,8 +48,6 @@ declarations' completeness and structural consistency, not their truthfulness.
   upper-bound planning signal rather than an exact count.
 - Inputs: a single tool object, an array of tool objects, or an object whose
   `tools` member is an array.
-- Policy: `explicit_safety_hints_v1`, a deployment-readiness baseline rather
-  than an MCP protocol-validity requirement.
 - Rule IDs: `CONTEXT_TOOL_BUDGET`, `CONTEXT_TOTAL_BUDGET`,
   `CONTEXT_DESCRIPTION_LENGTH`, and `CONTEXT_SCHEMA_LENGTH`.
 - Exit status: 1 when any configured context limit is exceeded; 0 otherwise.
@@ -69,9 +67,16 @@ declarations' completeness and structural consistency, not their truthfulness.
 
 - Inputs: a single tool object, an array of tool objects, or an object whose
   `tools` member is an array.
+- Identity validation: every item must contain a non-empty string `name` and an
+  object `inputSchema`; invalid items fail the complete analysis.
+- Policy: `explicit_safety_hints_v1`, a deployment-readiness baseline rather
+  than an MCP protocol-validity requirement.
 - Required explicit boolean hints: `readOnlyHint`, `destructiveHint`, and
   `openWorldHint`.
 - Optional checked fields: boolean `idempotentHint` and string `title`.
+- Custom normalization: when `readOnlyHint` is true, this policy requires
+  `destructiveHint` to be false. The finding is not an MCP protocol-invalidity
+  claim.
 - Rules: `ANNOTATION001_MISSING_ANNOTATIONS`,
   `ANNOTATION002_MISSING_REQUIRED_HINT`, `ANNOTATION003_INVALID_FIELD_TYPE`,
   and `ANNOTATION004_READ_ONLY_DESTRUCTIVE`.
