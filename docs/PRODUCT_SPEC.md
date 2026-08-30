@@ -11,6 +11,7 @@ is published.
 
 - Read one JSON tool definition.
 - For context budgeting, accept one tool, a tool array, or an MCP `tools/list` result.
+- For annotation checks, accept the same tool and `tools/list` input shapes.
 - Check common required fields and provider-specific envelope rules.
 - Emit stable rule IDs in text, JSON, or SARIF.
 - Recursively flag provider-incompatible schema keywords and non-strict OpenAI objects.
@@ -20,6 +21,10 @@ is published.
 - Enforce configurable per-tool, total, description, and schema byte limits with
   stable context rule IDs.
 - Never call a model or send input over the network.
+- Under the opt-in `explicit_safety_hints_v1` policy, require explicit boolean
+  `readOnlyHint`, `destructiveHint`, and `openWorldHint` annotations, validate
+  optional annotation field types, and normalize the read-only/destructive
+  combination under this custom policy.
 
 ## Non-goals
 
@@ -31,6 +36,10 @@ context window.
 Name collision analysis does not automatically rename, truncate, hash, or pick
 a winner, and does not treat equal raw names from different servers as an MCP
 protocol error.
+
+Annotation analysis does not infer side effects, idempotency, external access,
+or destructive behavior from names, descriptions, or schemas. It validates the
+declarations' completeness and structural consistency, not their truthfulness.
 
 ## Context budget contract
 
@@ -53,3 +62,22 @@ protocol error.
 - Policies: normalization and length limits are opt-in; the initial length
   policy measures ASCII names in bytes and leaves non-ASCII names unmeasured.
 - Behavior: deterministic, read-only, offline, and never mutates inventory.
+
+## Tool annotation contract
+
+- Inputs: a single tool object, an array of tool objects, or an object whose
+  `tools` member is an array.
+- Identity validation: every item must contain a non-empty string `name` and an
+  object `inputSchema`; invalid items fail the complete analysis.
+- Policy: `explicit_safety_hints_v1`, a deployment-readiness baseline rather
+  than an MCP protocol-validity requirement.
+- Required explicit boolean hints: `readOnlyHint`, `destructiveHint`, and
+  `openWorldHint`.
+- Optional checked fields: boolean `idempotentHint` and string `title`.
+- Custom normalization: when `readOnlyHint` is true, this policy requires
+  `destructiveHint` to be false. The finding is not an MCP protocol-invalidity
+  claim.
+- Rules: `ANNOTATION001_MISSING_ANNOTATIONS`,
+  `ANNOTATION002_MISSING_REQUIRED_HINT`, `ANNOTATION003_INVALID_FIELD_TYPE`,
+  and `ANNOTATION004_READ_ONLY_DESTRUCTIVE`.
+- Outputs: text, JSON, or SARIF; any finding returns exit status 1.

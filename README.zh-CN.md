@@ -29,6 +29,27 @@ cargo run -- tools.json --context-budget --output json
 `--max-description-bytes` 和 `--max-schema-bytes` 调整。超过阈值时输出稳定
 规则 ID，并返回退出码 1。
 
+## MCP 工具 annotation 报告
+
+可检查单个工具、工具数组或 MCP `tools/list` 结果是否显式声明安全 annotation：
+
+```bash
+cargo run -- tools.json --tool-annotations --output sarif
+```
+
+选择启用的 `explicit_safety_hints_v1` 策略要求 `readOnlyHint`、
+`destructiveHint` 和 `openWorldHint` 显式声明为 boolean，同时检查可选
+`idempotentHint` 与 `title` 的类型，并把 `readOnlyHint=true,
+destructiveHint=true` 作为自定义策略 normalization 报告：该策略要求只读工具的
+`destructiveHint=false`。稳定的 `ANNOTATION001` 到 `ANNOTATION004` 诊断支持
+文本、JSON 和 SARIF。这是部署就绪策略，并不声称 MCP 协议要求声明所有可选
+annotation，也不把该组合称为协议无效。
+
+该模式只做结构检查，不推断工具行为，也不能证明声明与实际实现相符；每个值仍需
+根据实现人工审阅。
+每个输入项必须包含非空 string `name` 与 object `inputSchema`；非法 collection
+项会令分析失败，而不是被静默跳过。
+
 ## MCP 聚合名称冲突报告
 
 当宿主聚合多个 MCP 服务器时，可检查调用方提供的最终名称：

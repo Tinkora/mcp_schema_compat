@@ -3,6 +3,173 @@ use serde_json::Value;
 use std::collections::HashMap;
 use thiserror::Error;
 
+const REQUIRED_ANNOTATION_HINTS: [&str; 3] = ["readOnlyHint", "destructiveHint", "openWorldHint"];
+
+#[derive(Debug, Error)]
+pub enum AnnotationError {
+    #[error("input must be one tool object, a tool array, or a tools/list result")]
+    InvalidInput,
+    #[error("tools/list result must contain an array of tool objects")]
+    InvalidToolsList,
+    #[error("tool {0} must contain a non-empty string name and an object inputSchema")]
+    InvalidTool(usize),
+}
+
+#[derive(Debug, Serialize)]
+pub struct AnnotationDiagnostic {
+    pub rule_id: &'static str,
+    pub level: &'static str,
+    pub message: String,
+    pub path: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AnnotationReport {
+    pub policy: &'static str,
+    pub required_hints: [&'static str; 3],
+    pub tools_checked: usize,
+    pub diagnostics: Vec<AnnotationDiagnostic>,
+}
+
+impl AnnotationReport {
+    pub fn has_errors(&self) -> bool {
+        self.diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.level == "error")
+    }
+}
+
+pub fn analyze_tool_annotations(input: &Value) -> Result<AnnotationReport, AnnotationError> {
+    let tools = extract_annotation_tools(input)?;
+    let tools_checked = tools.len();
+    let mut diagnostics = Vec::new();
+
+    for (tool, path) in tools {
+        let Some(annotations) = tool.get("annotations") else {
+            diagnostics.push(AnnotationDiagnostic {
+                rule_id: "ANNOTATION001_MISSING_ANNOTATIONS",
+                level: "error",
+                message: "tool must declare an annotations object with explicit required hints"
+                    .to_owned(),
+                path: format!("{path}.annotations"),
+            });
+            continue;
+        };
+        let Some(annotations) = annotations.as_object() else {
+            diagnostics.push(AnnotationDiagnostic {
+                rule_id: "ANNOTATION003_INVALID_FIELD_TYPE",
+                level: "error",
+                message: "annotations must be an object".to_owned(),
+                path: format!("{path}.annotations"),
+            });
+            continue;
+        };
+
+        for hint in REQUIRED_ANNOTATION_HINTS {
+            if !annotations.contains_key(hint) {
+                diagnostics.push(AnnotationDiagnostic {
+                    rule_id: "ANNOTATION002_MISSING_REQUIRED_HINT",
+                    level: "error",
+                    message: format!("required annotation hint {hint} must be declared explicitly"),
+                    path: format!("{path}.annotations.{hint}"),
+                });
+            }
+        }
+        for hint in [
+            "readOnlyHint",
+            "destructiveHint",
+            "openWorldHint",
+            "idempotentHint",
+        ] {
+            if annotations
+                .get(hint)
+                .is_some_and(|value| !value.is_boolean())
+            {
+                diagnostics.push(AnnotationDiagnostic {
+                    rule_id: "ANNOTATION003_INVALID_FIELD_TYPE",
+                    level: "error",
+                    message: format!("annotation hint {hint} must be a boolean"),
+                    path: format!("{path}.annotations.{hint}"),
+                });
+            }
+        }
+        if annotations
+            .get("title")
+            .is_some_and(|value| !value.is_string())
+        {
+            diagnostics.push(AnnotationDiagnostic {
+                rule_id: "ANNOTATION003_INVALID_FIELD_TYPE",
+                level: "error",
+                message: "annotation title must be a string".to_owned(),
+                path: format!("{path}.annotations.title"),
+            });
+        }
+        if annotations.get("readOnlyHint") == Some(&Value::Bool(true))
+            && annotations.get("destructiveHint") == Some(&Value::Bool(true))
+        {
+            diagnostics.push(AnnotationDiagnostic {
+                rule_id: "ANNOTATION004_READ_ONLY_DESTRUCTIVE",
+                level: "error",
+                message: "explicit_safety_hints_v1 normalizes destructiveHint to false when readOnlyHint is true".to_owned(),
+                path: format!("{path}.annotations"),
+            });
+        }
+    }
+
+    Ok(AnnotationReport {
+        policy: "explicit_safety_hints_v1",
+        required_hints: REQUIRED_ANNOTATION_HINTS,
+        tools_checked,
+        diagnostics,
+    })
+}
+
+fn extract_annotation_tools(input: &Value) -> Result<Vec<(&Value, String)>, AnnotationError> {
+    if let Some(items) = input.as_array() {
+        for (index, item) in items.iter().enumerate() {
+            validate_annotation_tool(item).map_err(|()| AnnotationError::InvalidTool(index))?;
+        }
+        return Ok(items
+            .iter()
+            .enumerate()
+            .map(|(index, tool)| (tool, format!("$[{index}]")))
+            .collect());
+    }
+
+    let object = input.as_object().ok_or(AnnotationError::InvalidInput)?;
+    if let Some(tools) = object.get("tools") {
+        let items = tools.as_array().ok_or(AnnotationError::InvalidToolsList)?;
+        for (index, item) in items.iter().enumerate() {
+            validate_annotation_tool(item).map_err(|()| AnnotationError::InvalidTool(index))?;
+        }
+        return Ok(items
+            .iter()
+            .enumerate()
+            .map(|(index, tool)| (tool, format!("$.tools[{index}]")))
+            .collect());
+    }
+
+    if object.contains_key("name") || object.contains_key("inputSchema") {
+        validate_annotation_tool(input).map_err(|()| AnnotationError::InvalidTool(0))?;
+        return Ok(vec![(input, "$".to_owned())]);
+    }
+    Err(AnnotationError::InvalidInput)
+}
+
+fn validate_annotation_tool(tool: &Value) -> Result<(), ()> {
+    let object = tool.as_object().ok_or(())?;
+    let valid_name = object
+        .get("name")
+        .and_then(Value::as_str)
+        .is_some_and(|name| !name.is_empty());
+    let valid_schema = object.get("inputSchema").is_some_and(Value::is_object);
+    if valid_name && valid_schema {
+        Ok(())
+    } else {
+        Err(())
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct NameInventoryEntry {
     pub origin_id: String,

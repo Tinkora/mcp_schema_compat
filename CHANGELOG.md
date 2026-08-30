@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add deterministic MCP tool annotation completeness and structural consistency
+  checks with text, JSON, and SARIF output.
+- Reject collection items without a non-empty tool name or object input schema.
+
 ## [0.1.0-alpha.8] - 2026-08-31
 
 - Add offline context budget reports for individual tools, tool arrays, and MCP
