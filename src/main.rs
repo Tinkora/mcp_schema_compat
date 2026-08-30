@@ -1,7 +1,7 @@
 use clap::{Parser, ValueEnum};
 use mcp_schema_compat::{
-    BudgetLimits, ContextBudgetReport, NameCollisionPolicy, NameNormalization,
-    analyze_context_budget, analyze_name_collisions,
+    AnnotationReport, BudgetLimits, ContextBudgetReport, NameCollisionPolicy, NameNormalization,
+    analyze_context_budget, analyze_name_collisions, analyze_tool_annotations,
 };
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf};
@@ -17,7 +17,7 @@ struct Cli {
     /// JSON tool definition, tool array, or tools/list result.
     input: PathBuf,
     /// Provider compatibility profile.
-    #[arg(short, long, value_enum, required_unless_present_any = ["context_budget", "name_collisions"])]
+    #[arg(short, long, value_enum, required_unless_present_any = ["context_budget", "name_collisions", "tool_annotations"])]
     profile: Option<Profile>,
     /// Report static context size without running any tools.
     #[arg(long, conflicts_with = "profile")]
@@ -25,6 +25,9 @@ struct Cli {
     /// Check an explicitly supplied multi-server tool inventory for name collisions.
     #[arg(long, conflicts_with = "profile", conflicts_with = "context_budget")]
     name_collisions: bool,
+    /// Check explicit MCP tool annotations without executing any tools.
+    #[arg(long, conflicts_with_all = ["profile", "context_budget", "name_collisions"])]
+    tool_annotations: bool,
     #[arg(long, requires = "name_collisions", default_value = "none")]
     normalize: String,
     #[arg(long, requires = "name_collisions")]
@@ -71,6 +74,8 @@ enum Error {
     NameCollisions(#[from] mcp_schema_compat::NameCollisionError),
     #[error("SARIF output is not available for name collision reports; use text or JSON")]
     NameCollisionSarif,
+    #[error("tool annotation analysis: {0}")]
+    ToolAnnotations(#[from] mcp_schema_compat::AnnotationError),
 }
 #[derive(serde::Serialize)]
 struct Diagnostic {
@@ -83,6 +88,14 @@ struct Diagnostic {
 fn main() -> Result<(), Error> {
     let cli = Cli::parse();
     let value: Value = serde_json::from_str(&fs::read_to_string(cli.input)?)?;
+    if cli.tool_annotations {
+        let report = analyze_tool_annotations(&value)?;
+        print_annotation_report(&report, &cli.output)?;
+        if report.has_errors() {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
     if cli.context_budget {
         if matches!(cli.output, Output::Sarif) {
             return Err(Error::ContextBudgetSarif);
@@ -172,6 +185,31 @@ fn main() -> Result<(), Error> {
     }
     if ds.iter().any(|d| d.level == "error") {
         std::process::exit(1);
+    }
+    Ok(())
+}
+
+fn print_annotation_report(report: &AnnotationReport, output: &Output) -> Result<(), Error> {
+    match output {
+        Output::Text => {
+            for diagnostic in &report.diagnostics {
+                println!(
+                    "{} [{}] {}: {}",
+                    diagnostic.level.to_uppercase(),
+                    diagnostic.rule_id,
+                    diagnostic.path,
+                    diagnostic.message
+                );
+            }
+            if report.diagnostics.is_empty() {
+                println!("Tool annotations are complete and structurally consistent");
+            }
+        }
+        Output::Json => println!("{}", serde_json::to_string_pretty(report)?),
+        Output::Sarif => println!(
+            "{}",
+            json!({"version":"2.1.0","runs":[{"tool":{"driver":{"name":"mcp-schema-compat","version":env!("CARGO_PKG_VERSION")}},"results":report.diagnostics.iter().map(|d| json!({"ruleId":d.rule_id,"level":d.level,"message":{"text":d.message},"locations":[{"logicalLocations":[{"fullyQualifiedName":d.path}]}]})).collect::<Vec<_>>() }]})
+        ),
     }
     Ok(())
 }

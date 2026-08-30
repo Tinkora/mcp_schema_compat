@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add deterministic MCP tool annotation completeness and structural consistency
+  checks with text, JSON, and SARIF output.
+
 ## [0.1.0-alpha.8] - 2026-08-31
 
 - Add offline context budget reports for individual tools, tool arrays, and MCP
